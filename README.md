@@ -1,8 +1,8 @@
-# GetChangedBlocksV2
+# GetChangedBlocksV2.ps1
 
 .SYNOPSIS
 
-    This scripts measures the amount of disk changes on VMware VMs each time it is run.
+    Powershell script to measure the amount of disk changes on VMware VMs each time it is run.
 
 .DESCRIPTION
 
