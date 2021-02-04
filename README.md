@@ -7,7 +7,8 @@
 .DESCRIPTION
 
     This scripts measures the amount of disk changes on VMware VMs each time it is run.
-    The main/original purpose is to get real data of the daily and weekly incremental changes of your VMs in order to size your data protection / backup solution properly.
+    The main/original purpose is to get real data of the daily and weekly incremental changes of your VMs
+    in order to size your data protection / backup solution properly.
     It measures all VM virtual disks for which Change Block Tracking (CBT) has been enabled.
     The first time it is run, it creates a file containing baseline data (CBT change IDs and times).
     Each subsequent run measures changes since the last run.
