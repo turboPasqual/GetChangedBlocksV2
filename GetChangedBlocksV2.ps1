@@ -1,6 +1,6 @@
 <# 
 .SYNOPSIS
-    This scripts measures the amount of disk changes on VMware VMs each time it is run.
+    Powershell script to measure the amount of disk changes on VMware VMs each time it is run.
 
 .DESCRIPTION
     This scripts measures the amount of disk changes on VMware VMs each time it is run.
@@ -13,7 +13,7 @@
 
 .NOTES
     Version:            1.0
-    Author:             Pasqual Döhring
+    Author:             Pasqual DÃ¶hring
     Creation Date:      2021-02-04
     Purpose/Change:     This script is based on a script from Carlo Giuliani, Canada, 2016. Thanks a lot for the great work so far!
                         Base script can be found here: (https://www.experts-exchange.com/articles/27059/A-PowerShell-script-to-measure-VM-data-change-rates-using-Changed-Block-Tracking-CBT.html)
