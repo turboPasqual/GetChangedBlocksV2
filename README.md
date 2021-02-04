@@ -1,4 +1,4 @@
-# GetChangedBlocksV2.ps1
+# GetChangedBlocksV2
 
 .SYNOPSIS
 
