@@ -1,9 +1,11 @@
 # GetChangedBlocksV2
 
 .SYNOPSIS
+
     This scripts measures the amount of disk changes on VMware VMs each time it is run.
 
 .DESCRIPTION
+
     This scripts measures the amount of disk changes on VMware VMs each time it is run.
     The main/original purpose is to get real data of the daily and weekly incremental changes of your VMs in order to size your data protection / backup solution properly.
     It measures all VM virtual disks for which Change Block Tracking (CBT) has been enabled.
@@ -13,6 +15,7 @@
     Note that every run creates a short-lived snapshot on every VM that has CBT enabed.
 
 .NOTES
+
     Version:            1.0
     Author:             Pasqual Döhring
     Creation Date:      2021-02-04
@@ -28,37 +31,45 @@
                         If you need to exclude VMs from this script, look for 'Exclude VMs that are sensitive to snapshots' in the script.
  
 .COMPONENT
+
     Requires VMware PowerCLI to be installed: https://www.vmware.com/support/developer/PowerCLI/
 
 .LINK
+
     This project on GitHub
 
 .Parameter vCenter
+
     Network name or IP address of the vCenter.
     Alias: vc
     Mandatory
 
 .Parameter SingleSignOn
+
     Set to $True if you want to use single sign on with your windows account to the vCenter.
     Alias: sso
     Optional
     Default: $False
 
 .Parameter weekDay
+
     Weekday for getting weekly changes. English weekdays.
     Optional
     Default: Saturday
 
 .EXAMPLE
+
     GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local
     Running the script against 'vcenter.mycompany.local' without single sign on.
     At first run you are getting asked for credentials which get saved in a credential file for later runs.
 
 .EXAMPLE
+
     GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -SingleSignOn $true
     Running the script against 'vcenter.mycompany.local' with single sign on.
 
 .EXAMPLE
+
     GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -SingleSignOn $true -weekDay Friday
     Running the script against 'vcenter.mycompany.local' with single sign on.
     Using Friday as the day to check for the weekly changes.
