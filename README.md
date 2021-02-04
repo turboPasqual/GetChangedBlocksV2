@@ -36,7 +36,7 @@
 
 .LINK
 
-    This project on GitHub
+    This project on GitHub: https://github.com/turboPasqual/GetChangedBlocksV2
 
 .Parameter vCenter
 
