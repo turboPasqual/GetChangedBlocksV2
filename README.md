@@ -17,6 +17,14 @@
 
 .NOTES
 
+    Version:            1.1
+    Author:             Pasqual Döhring
+    Creation Date:      2021-02-11
+    Purpose/Change:     Added the ability to filter by the datacenter and the cluster of VMware in case you don't want to track the whole vCenter.
+                        Datacenter and cluster of each VM are added to the csv files.
+                        (Attention: This breaks compatibility with existing Baseline and Data files and increases runtime by roughly 10 percent!)
+                        The script now automatically tries to remove leftover snapshots.
+                        
     Version:            1.0
     Author:             Pasqual Döhring
     Creation Date:      2021-02-04
