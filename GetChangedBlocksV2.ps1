@@ -12,8 +12,15 @@
     Note that every run creates a short-lived snapshot on every VM that has CBT enabed.
 
 .NOTES
+    Version:            1.1
+    Author:             Pasqual Döhring
+    Creation Date:      2021-02-11
+    Purpose/Change:     Added the ability to filter by the datacenter and the cluster of VMware in case you don't want to track the whole vCenter.
+                        Datacenter and cluster of each VM are added to the csv files. (Attention: This breaks compatibility with existing Baseline and Data files and increases runtime by roughly 10 percent!)
+                        The script now automatically tries to remove leftover snapshots.
+
     Version:            1.0
-    Author:             Pasqual DÃ¶hring
+    Author:             Pasqual Döhring
     Creation Date:      2021-02-04
     Purpose/Change:     This script is based on a script from Carlo Giuliani, Canada, 2016. Thanks a lot for the great work so far!
                         Base script can be found here: (https://www.experts-exchange.com/articles/27059/A-PowerShell-script-to-measure-VM-data-change-rates-using-Changed-Block-Tracking-CBT.html)
@@ -25,6 +32,7 @@
                         It keeps track of daily and weekly changes.
                         The code is much more commented and cleaned up (hopefully).
                         If you need to exclude VMs from this script, look for 'Exclude VMs that are sensitive to snapshots' in the script.
+
  
 .COMPONENT
     Requires VMware PowerCLI to be installed: https://www.vmware.com/support/developer/PowerCLI/
@@ -36,6 +44,16 @@
     Network name or IP address of the vCenter.
     Alias: vc
     Mandatory
+
+.Parameter Datacenter
+    If the Datacenter gets set, only the VMs inside the given datacenter get tracked.
+    Alias: dc
+    Optional
+
+.Parameter Cluster
+    If the Cluster gets set, only the VMs inside the given cluster get tracked.
+    Alias: dc
+    Optional
 
 .Parameter SingleSignOn
     Set to $True if you want to use single sign on with your windows account to the vCenter.
@@ -62,6 +80,9 @@
     Running the script against 'vcenter.mycompany.local' with single sign on.
     Using Friday as the day to check for the weekly changes.
 
+.EXAMPLE
+    GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -Datacenter 'MyFancyDatacenter'
+    Running the script against 'vcenter.mycompany.local' without single sign on. Using just the VMs inside the datacenter 'MyFancyDatacenter'.
 #>
 
 
@@ -76,6 +97,16 @@ Param (
     [alias("vc")]
     [String]
     $vCenter,
+
+    [parameter(HelpMessage="If the Datacenter gets set, only the VMs inside the given datacenter get tracked.")]
+    [alias("dc")]
+    [String]
+    $Datacenter = "",
+
+    [parameter(HelpMessage="If the Cluster gets set, only the VMs inside the given cluster get tracked.")]
+    [alias("cl")]
+    [String]
+    $Cluster = "",
 
     [parameter(HelpMessage="Weekday for getting weekly changes. English weekdays. Default: Saturday")]
     [String]
@@ -96,8 +127,8 @@ Set-StrictMode -Version Latest
 [String]$NoCBTVMFile = 'VMsWithoutCBT.csv'
 
 # Path to this Script
-[String]$global:scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
-[String]$global:scriptName = Split-Path -leaf $MyInvocation.MyCommand.Definition
+[String]$global:scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
+[String]$global:scriptName = Split-Path -Leaf $MyInvocation.MyCommand.Definition
 [String]$global:scriptFullname = $MyInvocation.MyCommand.Definition
 
 # Setting full file names for data files
@@ -145,6 +176,8 @@ function Generate-InfoObject {
         $objReturn = New-Object 'PSObject' | Select-Object `
             @{Name='VmName';Expression={$vm.name}},
             @{Name='UUID';Expression={$vm.PersistentId}},
+            @{Name='Datacenter';Expression={$vm.Datacenter}},
+            @{Name='Cluster';Expression={$vm.Cluster}},
             @{Name='CumulatedDiskCapacityGB';Expression={$vm.CumulatedDiskCapacity}},
             @{Name='VmGBUsed';Expression={$vm.UsedSpaceGB}},
             @{Name='TimeStamp';Expression={$TimeStamp}},
@@ -203,7 +236,8 @@ function Calculate-Changes([VMware.VimAutomation.ViCore.Types.V1.VM.Snapshot]$sn
     $GBChanged = 0
     try {
         # Get VM and view of the snapshot
-        $VM = $snapshot.VM
+        $VM = $vms | Where-Object { ($_.name -eq $snapshot.VM.Name) -and ($_.PersistentId -eq $snapshot.VM.PersistentId) }
+        #$VM = $snapshot.VM
         $vmwiew = Get-View $vm
         $snapview = Get-View $snapshot
 
@@ -301,12 +335,13 @@ try {
 }
 
 # Get list of all VMs and sort it
+Write-Host "Get list of all VMs..."
 [VMware.VimAutomation.ViCore.Types.V1.Inventory.VirtualMachine[]]$VMs = Get-VM
 $VMs = $VMs | Sort-Object -Property Name, PersistentId
 [int]$VMsCount = ($VMs | Measure-Object).Count
 
 
-# Add the own disks to each VM-Object and store the summed capacity of those disks
+# Adds some information to each VM-Object: the own disks, summed capacity of those disks, datacenter, cluster
 foreach ($VM in $VMs) {
     $VM | Add-Member -MemberType NoteProperty -Name 'Disks' -Value (Get-HardDisk -VM $VM)
     $CumulatedDiskCapacity = 0
@@ -314,6 +349,17 @@ foreach ($VM in $VMs) {
         $CumulatedDiskCapacity = ($VM.Disks.CapacityGB | Measure-Object -Sum).sum
     }
     $VM | Add-Member -MemberType NoteProperty -Name 'CumulatedDiskCapacity' -Value $CumulatedDiskCapacity
+
+    $VM | Add-Member -MemberType NoteProperty -Name 'Datacenter' -Value ($VM | Get-Datacenter).Name
+    $VM | Add-Member -MemberType NoteProperty -Name 'Cluster' -Value ($VM | Get-Cluster).Name
+}
+
+# Filter by Datacenter and Cluster
+if ($Datacenter -ne "") {
+    $VMs = $VMs | Where-Object { $_.Cluster -ieq $Datacenter }
+}
+if ($Cluster -ne "") {
+    $VMs = $VMs | Where-Object { $_.Cluster -ieq $Cluster }
 }
 
 # Get list of VMs with Change Block Tracking (CBT) enabled
@@ -623,8 +669,8 @@ Write-Host " "
 Write-Host "Checking for leftover snapshots..."
 $Snapshots = Get-VM  | Get-Snapshot | ?{$_.name -match '\sCBT\s'}
 If ($snapshots) {
-    Write-Host -f red (($Snapshots | Measure-Object).Count.toString() + " left-over CBT snapshots!")
-    $Snapshots | ft vm,created,name
+    Write-Host -f red (($Snapshots | Measure-Object).Count.toString() + " left-over CBT snapshot(s)! Going to remove...")
+    $Snapshots | Remove-Snapshot -Confirm:$false -ErrorAction SilentlyContinue
 } else {
     Write-Host "None found!"
 }
@@ -634,4 +680,3 @@ Write-Host " "
 Write-Host "Disconnecting from vCenter..."
 Disconnect-VIServer -Server $vCenterConnection -Force -Confirm:$false
 Write-Host "Done!"
-
