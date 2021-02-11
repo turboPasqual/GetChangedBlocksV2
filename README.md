@@ -7,8 +7,7 @@
 .DESCRIPTION
 
     This scripts measures the amount of disk changes on VMware VMs each time it is run.
-    The main/original purpose is to get real data of the daily and weekly incremental changes of your VMs
-    in order to size your data protection / backup solution properly.
+    The main/original purpose is to get real data of the daily and weekly incremental changes of your VMs in order to size your data protection / backup solution properly.
     It measures all VM virtual disks for which Change Block Tracking (CBT) has been enabled.
     The first time it is run, it creates a file containing baseline data (CBT change IDs and times).
     Each subsequent run measures changes since the last run.
@@ -24,7 +23,7 @@
                         Datacenter and cluster of each VM are added to the csv files.
                         (Attention: This breaks compatibility with existing Baseline and Data files and increases runtime by roughly 10 percent!)
                         The script now automatically tries to remove leftover snapshots.
-                        
+
     Version:            1.0
     Author:             Pasqual Döhring
     Creation Date:      2021-02-04
@@ -38,6 +37,7 @@
                         It keeps track of daily and weekly changes.
                         The code is much more commented and cleaned up (hopefully).
                         If you need to exclude VMs from this script, look for 'Exclude VMs that are sensitive to snapshots' in the script.
+
  
 .COMPONENT
 
@@ -52,6 +52,18 @@
     Network name or IP address of the vCenter.
     Alias: vc
     Mandatory
+
+.Parameter Datacenter
+
+    If the Datacenter gets set, only the VMs inside the given datacenter get tracked.
+    Alias: dc
+    Optional
+
+.Parameter Cluster
+
+    If the Cluster gets set, only the VMs inside the given cluster get tracked.
+    Alias: dc
+    Optional
 
 .Parameter SingleSignOn
 
@@ -82,3 +94,8 @@
     GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -SingleSignOn $true -weekDay Friday
     Running the script against 'vcenter.mycompany.local' with single sign on.
     Using Friday as the day to check for the weekly changes.
+
+.EXAMPLE
+
+    GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -Datacenter 'MyFancyDatacenter'
+    Running the script against 'vcenter.mycompany.local' without single sign on. Using just the VMs inside the datacenter 'MyFancyDatacenter'.
