@@ -8,10 +8,26 @@
     It measures all VM virtual disks for which Change Block Tracking (CBT) has been enabled.
     The first time it is run, it creates a file containing baseline data (CBT change IDs and times).
     Each subsequent run measures changes since the last run.
-    Additionally once a day/week (first run) it measures changes since the last day/week.
+    Additionally once a day/week it measures changes since the last day/week.
     Note that every run creates a short-lived snapshot on every VM that has CBT enabed.
 
 .NOTES
+    Version:            1.2
+    Author:             Pasqual Döhring
+    Creation Date:      2021-07-13
+    Purpose/Change:     Suppress VMware Customer Experience Improvement Program message.
+                        Ignore Invalid server certificate warning.
+                        New parameter "-OutputJSON". By omitting this switch, the script does not generate normal output. Instead JSON is used as an output at the command line.
+                        New parameter "-NoDataFiles". By omitting this switch, the script does not generate any data file output. The base files get still generated since they are needed.
+                        Fixed an error when a VM had no disks at all.
+                        Got rid of unnecessary steps for VMs that are excluded.
+                        Fixed OverFlowException when disks of VMs where too big.
+                        Added the possibility to provide vcenter credentials by username and password. (-Username, -Password)
+                        VMs can now be excluded by the parameter "-FilterScript". This is based by the properties of a VM (type: VMware.VimAutomation.ViCore.Types.V1.Inventory.VirtualMachine).
+                            By using a FilterScript you just include(!) those VMs for which the script is true.
+                            Example: -FilterScript '$_.Name -notlike "*test*"'
+                            Example: -FilterScript '$_.Name -like "PleaseIncludeMe*" -and $_.PowerState -eq "PoweredOn"'
+
     Version:            1.1
     Author:             Pasqual Döhring
     Creation Date:      2021-02-11
@@ -56,15 +72,32 @@
     Optional
 
 .Parameter SingleSignOn
-    Set to $True if you want to use single sign on with your windows account to the vCenter.
+    Omit this switch if you want to use single sign on with your windows account to the vCenter.
     Alias: sso
     Optional
-    Default: $False
+
+.Parameter Username
+    Username to use for the vCenter connection. Must be used in combination with -Password.
+    Alias: sso
+    Optional
+
+.Parameter Password
+    Plain text password to use for the vCenter connection. Must be used in combination with -Username.
+    Alias: sso
+    Optional
 
 .Parameter weekDay
     Weekday for getting weekly changes. English weekdays.
     Optional
     Default: Saturday
+
+.Parameter OutputJSON
+    By omitting this switch, the script does not generate normal output. Instead JSON is used as an output at the command line.
+    Optional
+
+.Parameter NoDataFiles
+    By omitting this switch, the script does not generate any data file output. The base files get still generated since they are needed.
+    Optional
 
 .EXAMPLE
     GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local
@@ -72,47 +105,116 @@
     At first run you are getting asked for credentials which get saved in a credential file for later runs.
 
 .EXAMPLE
-    GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -SingleSignOn $true
+    GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -SingleSignOn
     Running the script against 'vcenter.mycompany.local' with single sign on.
 
 .EXAMPLE
-    GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -SingleSignOn $true -weekDay Friday
+    GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -SingleSignOn -weekDay Friday
     Running the script against 'vcenter.mycompany.local' with single sign on.
     Using Friday as the day to check for the weekly changes.
 
 .EXAMPLE
-    GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -Datacenter 'MyFancyDatacenter'
-    Running the script against 'vcenter.mycompany.local' without single sign on. Using just the VMs inside the datacenter 'MyFancyDatacenter'.
+    GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -Datacenter 'MyFancyDatacenter' -Username "domain\admin" -Password "PWD123"
+    Running the script against 'vcenter.mycompany.local' with explicit user credentials. Using just the VMs inside the datacenter 'MyFancyDatacenter'.
 #>
 
-
+[CmdletBinding(DefaultParametersetname="CredLogon")]
 Param (
-    [parameter(HelpMessage="Set to `$True if you want to use single sign on with your windows account to the vCenter. Default: `$False")]
-    [alias("sso")]
-    [boolean]
-    $SingleSignOn = $false,
-
-    [parameter(Mandatory=$true,
+    [Parameter(ParameterSetName = 'CredLogon',
+    Mandatory=$true,
     HelpMessage="Network name or IP address of the vCenter.")]
-    [alias("vc")]
-    [String]
+    [Parameter(ParameterSetName = 'UserLogon',
+    Mandatory=$true,
+    HelpMessage="Network name or IP address of the vCenter.")]
+    [Parameter(ParameterSetName = 'SSOLogon',
+    Mandatory=$true,
+    HelpMessage="Network name or IP address of the vCenter.")]
+    [ValidateNotNullOrEmpty()]
+    [Alias("vc")]
+    [string]
     $vCenter,
 
-    [parameter(HelpMessage="If the Datacenter gets set, only the VMs inside the given datacenter get tracked.")]
-    [alias("dc")]
-    [String]
+    [Parameter(ParameterSetName = 'UserLogon',
+    Mandatory=$true,
+    HelpMessage="Username for the vCenter connection.")]
+    [Alias("user")]
+    [ValidateNotNullOrEmpty()]
+    [string]
+    $UserName,
+
+    [Parameter(ParameterSetName = 'UserLogon',
+    Mandatory=$true,
+    HelpMessage="Plain text password for the vCenter connection.")]
+    [ValidateNotNull()]
+    [Alias("pwd")]
+    [string]
+    $Password,
+
+    [Parameter(ParameterSetName = 'SSOLogon',
+    Mandatory=$true,
+    HelpMessage="Set to `$True if you want to use single sign on with your windows account to the vCenter. Default: `$False")]
+    [Alias("sso")]
+    [switch]
+    $SingleSignOn,
+
+    [Parameter(ParameterSetName = 'CredLogon',
+    HelpMessage="If the Datacenter gets set, only the VMs inside the given datacenter get tracked.")]
+    [Parameter(ParameterSetName = 'UserLogon',
+    HelpMessage="If the Datacenter gets set, only the VMs inside the given datacenter get tracked.")]
+    [Parameter(ParameterSetName = 'SSOLogon',
+    HelpMessage="If the Datacenter gets set, only the VMs inside the given datacenter get tracked.")]
+    [Alias("dc")]
+    [string]
     $Datacenter = "",
 
-    [parameter(HelpMessage="If the Cluster gets set, only the VMs inside the given cluster get tracked.")]
-    [alias("cl")]
-    [String]
+    [Parameter(ParameterSetName = 'CredLogon',
+    HelpMessage="If the Cluster gets set, only the VMs inside the given cluster get tracked.")]
+    [Parameter(ParameterSetName = 'UserLogon',
+    HelpMessage="If the Cluster gets set, only the VMs inside the given cluster get tracked.")]
+    [Parameter(ParameterSetName = 'SSOLogon',
+    HelpMessage="If the Cluster gets set, only the VMs inside the given cluster get tracked.")]
+    [Alias("cl")]
+    [string]
     $Cluster = "",
 
-    [parameter(HelpMessage="Weekday for getting weekly changes. English weekdays. Default: Saturday")]
-    [String]
+    [Parameter(ParameterSetName = 'CredLogon',
+    HelpMessage="Scriptblock to exclude VMs that shall not be snapped.")]
+    [Parameter(ParameterSetName = 'UserLogon',
+    HelpMessage="Scriptblock to exclude VMs that shall not be snapped.")]
+    [Parameter(ParameterSetName = 'SSOLogon',
+    HelpMessage="Scriptblock to exclude VMs that shall not be snapped.")]
+    [string]
+    $FilterScript = '$true',
+
+    [Parameter(ParameterSetName = 'CredLogon',
+    HelpMessage="Weekday for getting weekly changes. English weekdays. Default: Saturday")]
+    [Parameter(ParameterSetName = 'UserLogon',
+    HelpMessage="Weekday for getting weekly changes. English weekdays. Default: Saturday")]
+    [Parameter(ParameterSetName = 'SSOLogon',
+    HelpMessage="Weekday for getting weekly changes. English weekdays. Default: Saturday")]
+    [string]
     [ValidateSet("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")]
-    $weekDay = "Saturday"
+    $weekDay = "Saturday",
+
+    [Parameter(ParameterSetName = 'CredLogon',
+    HelpMessage="Omit if you want the script to output the results as JSON. Every normal output will be omitted.")]
+    [Parameter(ParameterSetName = 'UserLogon',
+    HelpMessage="Omit if you want the script to output the results as JSON. Every normal output will be omitted.")]
+    [Parameter(ParameterSetName = 'SSOLogon',
+    HelpMessage="Omit if you want the script to output the results as JSON. Every normal output will be omitted.")]
+    [switch]
+    $OutputJSON,
+
+    [Parameter(ParameterSetName = 'CredLogon',
+    HelpMessage="Omit if you do not want the script to output the results into data files.")]
+    [Parameter(ParameterSetName = 'UserLogon',
+    HelpMessage="Omit if you do not want the script to output the results into data files.")]
+    [Parameter(ParameterSetName = 'SSOLogon',
+    HelpMessage="Omit if you do not want the script to output the results into data files.")]
+    [switch]
+    $NoDataFiles
 )
+
 
 # Setting StrictMode to prevent programming errors
 Set-StrictMode -Version Latest
@@ -141,6 +243,7 @@ $IndependentDiskFile = $global:scriptPath + '\' + $vCenter + '\' + $IndependentD
 $NoCBTVMFile = $global:scriptPath + '\' + $vCenter + '\' + $NoCBTVMFile
 $CredFile = $global:scriptPath + '\' + $vCenter + '\cred'
 $LogFile = $global:scriptFullname + '.log'
+
 
 
 #####################
@@ -263,11 +366,13 @@ function Calculate-Changes([VMware.VimAutomation.ViCore.Types.V1.VM.Snapshot]$sn
     }
 
     # Output the result
-    Write-Host "$($VM.Name) (UUID: $($VM.PersistentId)) $($snapdisk.DeviceInfo.Label) $GBchanged GB changed since $($BaseTime)."
+    if (-not $OutputJSON) {
+        Write-Host "$($VM.Name) (UUID: $($VM.PersistentId)) $($snapdisk.DeviceInfo.Label) $GBchanged GB changed since $($BaseTime)."
+    }
 
     # Convert the Disk size (in kb) to an integer
     [String]$strDiskSummary = $snapdisk.DeviceInfo.Summary.Substring(0, $snapdisk.DeviceInfo.Summary.Length - 3).Replace(",", "")
-    [int]$intDiskSummary = [convert]::ToInt32($strDiskSummary, 10)
+    [int64]$intDiskSummary = [convert]::ToInt64($strDiskSummary, 10)
 
     # Generate the return object
     $objReturn = Generate-InfoObject -vm $vm -TimeStamp $ThisTime -AdditionalValues @{'DiskName'=$snapdisk.deviceinfo.label}, @{'DiskKey'=$snapdisk.key}, @{'DiskSummary GB'=$intDiskSummary / 1024 / 1024}, @{'BaseTime'=$BaseTime}, @{'Interval'=New-Timespan $BaseTime $ThisTime}, @{'GBChanged'=$GBChanged}
@@ -296,12 +401,14 @@ if (-not (Test-Path ($global:scriptPath + '\' + $vCenter) -PathType Container)) 
     $null = New-Item -ItemType Directory -Force -Path ($global:scriptPath + '\' + $vCenter)
 }
 
+
 # Cleaning error variable
 $Error.Clear()
 
+
 # Getting credentials for vCenter login
 [PSCredential]$creds = $null
-if (-not $SingleSignOn) {
+if ($PSCmdlet.ParameterSetName -eq "CredLogon") {
     try {
         $creds = Get-Credential (Import-Clixml $CredFile) -ErrorAction Stop
     } catch {
@@ -309,34 +416,65 @@ if (-not $SingleSignOn) {
         if ($null -ne $creds) {
             $creds | Export-Clixml $CredFile -Force
         } else {
-            Throw ('No credentials for vCenter Login!')
+            if (-not $OutputJSON) {
+                Throw ('No credentials for vCenter Login!')
+            } else {
+                (New-Object Management.Automation.ErrorRecord 'No credentials for vCenter Login!', 1, 'OperationStopped', 'No credentials for vCenter Login!' | ConvertTo-Json -Depth 1 -Compress).ToString()
+            }
             exit 1
         }
     }
+} elseif ($PSCmdlet.ParameterSetName -eq "UserLogon") {
+    $creds = New-Object PSCredential $UserName, $(ConvertTo-SecureString $Password -AsPlainText -Force)
 }
 
 
 # Initialize PowerCLI and connect to vCenter
-Write-Host "Trying to connect to vCenter..."
+if (-not $OutputJSON) {
+    Write-Host "Trying to connect to vCenter..."
+}
 $vCenterConnection = $null
 try {
-    if ($SingleSignOn) {
-        $vCenterConnection = Connect-VIServer $vCenter -ErrorAction Stop
+    # Suppress VMware Customer Experience Improvement Program message
+    if ($null -eq (Get-PowerCLIConfiguration -Scope User).ParticipateInCEIP) {
+        $null = Set-PowerCLIConfiguration -Scope User -ParticipateInCeip $false -Confirm:$false
+    }
+
+    # Ignore Invalid server certificate warning
+    if ($null -eq (Get-PowerCLIConfiguration -Scope User).InvalidCertificateAction) {
+        $null = Set-PowerCLIConfiguration -Scope User -InvalidCertificateAction Ignore -Confirm:$false
+    }
+
+    # Logon to vCenter
+    if ($null -eq $creds) {
+        $vCenterConnection = Connect-VIServer $vCenter -NotDefault -ErrorAction Stop
     } else {
-        $vCenterConnection = Connect-VIServer $vCenter -Credential $creds -ErrorAction Stop
+        $vCenterConnection = Connect-VIServer $vCenter -NotDefault -Credential $creds -ErrorAction Stop
     }
 } catch {
-    # Probably wrong credentials. Deleting stored credentials if not using sso.
-    if (-not $SingleSignOn) {
-        Remove-Item $CredFile -Force -ErrorAction SilentlyContinue
+    if (-not $OutputJSON) {
+        Throw $Error[0]
+    } else {
+        ($Error[0] | ConvertTo-Json -Depth 1 -Compress).ToString()
     }
-    Throw $Error[0]
     exit 1
 }
 
-# Get list of all VMs and sort it
-Write-Host "Get list of all VMs..."
-[VMware.VimAutomation.ViCore.Types.V1.Inventory.VirtualMachine[]]$VMs = Get-VM
+# Get list of all VMs
+if (-not $OutputJSON) {
+    Write-Host "Get list of all VMs..."
+}
+[VMware.VimAutomation.ViCore.Types.V1.Inventory.VirtualMachine[]]$VMs = Get-VM -Server $vCenter
+
+
+# Exclude VMs that are sensitive to snapshots
+#$FilterScript = '$_.Name -notmatch "dc01" -and $_.Name -notmatch "dc02" -and $_.Name -notlike "smtp-relay-*" -and $_.Name -notlike "vcenter*" -and $_.Name -notlike "BVQSRV*"'
+#$FilterScript = '$_.Name -like "cv*"'
+[scriptblock]$FilterBlock = [scriptblock]::Create( $FilterScript )
+$VMs = $VMs | Where-Object -FilterScript $FilterBlock
+
+
+# Sort list of all VMs
 $VMs = $VMs | Sort-Object -Property Name, PersistentId
 [int]$VMsCount = ($VMs | Measure-Object).Count
 
@@ -391,19 +529,16 @@ foreach ($VMWithoutCBT in $VMsWithoutCBT) {
 
         # Add object to the list
         $NoCbtVMs += ,$objTemp
+
+        if ($OutputJSON) {
+            # Only export new Information with JSON
+            (@{'NoCbtVM' = $objTemp} | ConvertTo-Json -Depth 1 -Compress).ToString()
+        }
     }
 }
 # Sort list and write it to disk
 $NoCbtVMs = $NoCbtVMs | Sort-Object -Property VmName, UUID
 $NoCbtVMs | Export-CSV -Delimiter ';' $NoCBTVMFile -NoTypeInformation -Force
-
-
-# Exclude VMs that are sensitive to snapshots
-#$VMsToTrack = $VMsToTrack | Where-Object { $_.Name -notmatch 'dc01' }
-#$VMsToTrack = $VMsToTrack | Where-Object { $_.Name -notmatch 'dc02' }
-#$VMsToTrack = $VMsToTrack | Where-Object { $_.Name -notlike 'smtp-relay-*' }
-#$VMsToTrack = $VMsToTrack | Where-Object { $_.Name -notlike 'vcenter*' }
-#$VMsToTrack = $VMsToTrack | Where-Object { $_.Name -notlike 'BVQSRV*' }
 
 
 # Build list of VMs that are not to be snapshotted at all.
@@ -414,6 +549,7 @@ $NoCbtVMs | Export-CSV -Delimiter ';' $NoCBTVMFile -NoTypeInformation -Force
 
 # Is this the first run of the script? Automatically set to true if no baseline exists.
 [boolean]$bFirstRun = $false
+
 
 # Try to read existing baseline file
 [PSObject[]]$Baselines = @()
@@ -438,9 +574,11 @@ try {
 #
 # Note that there may be more than one disk per VM.
 # and in some cases only some disks have CBT enabled.
-Write-Host " "
-Write-Host "Creating baselines for max. $VMsToTrackCount VMs..."
-Write-Host " "
+if (-not $OutputJSON) {
+    Write-Host " "
+    Write-Host "Creating baselines for max. $VMsToTrackCount VMs..."
+    Write-Host " "
+}
 
 $export = $false
 $i = 0
@@ -449,8 +587,12 @@ foreach ($vm in $VMsToTrack) {
     $bCreateSnap = $false
 
     # Get the snappable and the non-snappable disks
-    $snappableDisks = $vm.Disks | Where-Object { $_.Persistence -notlike "Independent*" }
-    $nonsnappableDisks = $vm.Disks | Where-Object { $_.Persistence -like "Independent*" }
+    $snappableDisks = $null
+    $nonsnappableDisks = $null
+    if (($vm.Disks | Measure-Object).Count -gt 0) {
+        $snappableDisks = $vm.Disks | Where-Object { $_.Persistence -notlike "Independent*" }
+        $nonsnappableDisks = $vm.Disks | Where-Object { $_.Persistence -like "Independent*" }
+    }
     
     # Check, if we don't already have a baseline for one or more of the disks. If true set $bCreateSnap=$true
     if ($null -ne $snappableDisks) {
@@ -475,13 +617,20 @@ foreach ($vm in $VMsToTrack) {
         if ($null -eq $independentDisk) {
             $objTemp = Generate-InfoObject -vm $vm -TimeStamp $TimeStamp -AdditionalValues @{'DiskName'=$disk.Name}, @{'DiskFileName'=$disk.FileName}, @{'DiskCapacityGB'=$disk.CapacityGB}, @{'DiskPersistence'=$disk.Persistence}, @{'DiskType'=$disk.DiskType}
             $IndependentDisks += ,$objTemp
+
+            if ($OutputJSON) {
+                # Only export new Information with JSON
+                (@{'IndependentDisk' = $objTemp} | ConvertTo-Json -Depth 1 -Compress).ToString()
+            }
         }
     }
 
 
     # Create Snap if we don't already have a full baseline
     if ($bCreateSnap) {
-        Write-Host "Creating baseline for $($VM.Name) (UUID: $($VM.PersistentId)) ($i of $VMsToTrackCount)..."
+        if (-not $OutputJSON) {
+            Write-Host "Creating baseline for $($VM.Name) (UUID: $($VM.PersistentId)) ($i of $VMsToTrackCount)..."
+        }
         $export = $true
         [VMware.VimAutomation.ViCore.Types.V1.VM.Snapshot]$snapshot = $null
         $snapdisks = $null
@@ -496,9 +645,18 @@ foreach ($vm in $VMsToTrack) {
             }
             
         } catch {
-            # Something went wrong. Log Error in $SnapErrorFile
+            # Something went wrong.
             $objTemp = Generate-InfoObject -vm $vm -TimeStamp $TimeStamp -ErrorMessage $Error[0].Exception.Message
-            $objTemp | Export-CSV -Delimiter ';' $SnapErrorFile -NoTypeInformation -Force -Append
+
+            if ($OutputJSON) {
+                # Export error with JSON
+                (@{'SnapshotError' = $objTemp} | ConvertTo-Json -Depth 1 -Compress).ToString()
+            }
+
+            # Log Error in $SnapErrorFile
+            if (-not $NoDataFiles) {
+                $objTemp | Export-CSV -Delimiter ';' $SnapErrorFile -NoTypeInformation -Force -Append
+            }
             
             $Error.RemoveAt(0) # Remove last Error from $Error because we have already dealt with it
         }
@@ -509,13 +667,18 @@ foreach ($vm in $VMsToTrack) {
                 if ($null -eq ($Baselines | Where-Object { $VM.Name -eq $_.VMname} | Where-Object { $_.DiskName -eq $snapdisk.deviceinfo.label})) {
                     # Convert the Disk size (in kb) to an integer
                     [String]$strDiskSummary = $snapdisk.DeviceInfo.Summary.Substring(0, $snapdisk.deviceinfo.summary.Length - 3).Replace(",", "")
-                    [int]$intDiskSummary = [convert]::ToInt32($strDiskSummary, 10)
+                    [int64]$intDiskSummary = [convert]::ToInt64($strDiskSummary, 10)
 
                     # Generate the baseline object
                     $objTemp = Generate-InfoObject -vm $vm -TimeStamp $TimeStamp -AdditionalValues @{'DiskName'=$snapdisk.deviceinfo.label}, @{'DiskKey'=$snapdisk.key}, @{'DiskSummary GB'=$intDiskSummary / 1024 / 1024}, @{'ChangeId'=$snapdisk.Backing.ChangeId}, @{'DailyTimeStamp'=$TimeStamp}, @{'DailyChangeId'=$snapdisk.Backing.ChangeId}, @{'WeeklyTimeStamp'=$TimeStamp}, @{'WeeklyChangeId'=$snapdisk.Backing.ChangeId}
 
                     # Add object to list
                     $Baselines += ,$objTemp
+
+                    if ($OutputJSON) {
+                        # Only export new Information with JSON
+                        (@{'Baseline' = $objTemp} | ConvertTo-Json -Depth 1 -Compress).ToString()
+                    }
                 }
             }
 
@@ -533,17 +696,20 @@ $IndependentDisks | Export-CSV -Delimiter ';' $IndependentDiskFile -NoTypeInform
 
  
 # Additional Info
-Write-Host " "
-Write-Host "****************************************"
-Write-Host "   Total VMs: $VMscount"
-Write-Host "****************************************"
-Write-Host "   Total VMs with CBT enabled: $VMsToTrackCount"
-Write-Host "****************************************"
-Write-Host " "
+if (-not $OutputJSON) {
+    Write-Host " "
+    Write-Host "****************************************"
+    Write-Host "   Total VMs: $VMscount"
+    Write-Host "****************************************"
+    Write-Host "   Total VMs with CBT enabled: $VMsToTrackCount"
+    Write-Host "****************************************"
+    Write-Host " "
+}
     
 # CSV export of baselines
 $Baselines = $Baselines | Sort-Object -Property VmName, DiskName
 $Baselines | Export-CSV -Delimiter ';' $Basefile -NoTypeInformation -Force
+
 
 
 if (-not $bFirstRun) {
@@ -554,9 +720,11 @@ if (-not $bFirstRun) {
     # Note that there may be more than one disk per VM.
     # and in some cases only some disks have CBT enabled.
 
-    Write-Host " "
-    Write-Host "Tracking changes of max. $($Baselines.count) Disks..."
-    Write-Host " "
+    if (-not $OutputJSON) {
+        Write-Host " "
+        Write-Host "Tracking changes of max. $(($Baselines | Where-Object {$_.VmName -in $VMsToTrack.Name}).Count) Disks..."
+        Write-Host " "
+    }
     
     # Resetting variables
     [VMware.VimAutomation.ViCore.Types.V1.Inventory.VirtualMachine]$VM = $null
@@ -569,76 +737,104 @@ if (-not $bFirstRun) {
 
 
     ForEach ($b in $Baselines) {
-        # Get the actual date and time
-        $TimeStamp = Get-Date -format $DTformat
+        # Sort out the baselines of the VMs that we don't track (just by the name of the VM and not by the UUID)
+        if ($b.VmName -in $VMsToTrack.Name){
 
-        if (($b.VmName -ne $lastVMname) -or (($b.UUID -ne $lastVMUUID))) { # done with previous VM or first time in the loop
+            # Get the actual date and time
+            $TimeStamp = Get-Date -format $DTformat
 
-            # delete snapshot created in previous step if it exists
-            if ($null -ne $snapshot) {
-                AsyncRemove-Snapshot $snapshot
-            }
+            if (($b.VmName -ne $lastVMname) -or (($b.UUID -ne $lastVMUUID))) { # done with previous VM or first time in the loop
 
-            # Reset variable
-            $snapshot = $null
-            
-            # next VM in baselines
-            $vm = $VMsToTrack | Where-Object {($_.Name -ieq $b.VmName) -and ($_.PersistentId -eq $b.UUID)}
-
-            # Create snapshot for this VM 
-            if ($null -ne $vm) {
-                $vmview    = Get-View $vm
- 
-                try {
-                    $snapshot = AsyncNew-Snapshot $vm
-                } catch {
-                    # Could not create Snapshot. Write error to $SnapErrorFile
-                    $objTemp = Generate-InfoObject -vm $vm -TimeStamp $TimeStamp -ErrorMessage $Error[0].Exception.Message
-                    $objTemp | Export-CSV -Delimiter ';' $SnapErrorFile -NoTypeInformation -Force -Append
-
-                    $Error.RemoveAt(0) # Remove last Error from $Error because we have already dealt with it
+                # delete snapshot created in previous step if it exists
+                if ($null -ne $snapshot) {
+                    AsyncRemove-Snapshot $snapshot
                 }
-            } else {
-                # Could not find VM from baseline in the current VMs anymore... Ignore!
-                # Write-Host -f red "VM MISSING $($b.VMname)!"
-            }
 
-        }
+                # Reset variable
+                $snapshot = $null
+            
+                # next VM in baselines
+                $vm = $VMsToTrack | Where-Object {($_.Name -ieq $b.VmName) -and ($_.PersistentId -eq $b.UUID)}
+
+                # Create snapshot for this VM 
+                if ($null -ne $vm) {
+                    $vmview    = Get-View $vm
+ 
+                    try {
+                        $snapshot = AsyncNew-Snapshot $vm
+                    } catch {
+                        # Could not create Snapshot. Write error to $SnapErrorFile
+                        $objTemp = Generate-InfoObject -vm $vm -TimeStamp $TimeStamp -ErrorMessage $Error[0].Exception.Message
+
+                        if ($OutputJSON) {
+                            # Export error with JSON
+                            (@{'SnapshotError' = $objTemp} | ConvertTo-Json -Depth 1 -Compress).ToString()
+                        }
+
+                        # Log Error in $SnapErrorFile
+                        if (-not $NoDataFiles) {
+                            $objTemp | Export-CSV -Delimiter ';' $SnapErrorFile -NoTypeInformation -Force -Append
+                        }
+
+                        $Error.RemoveAt(0) # Remove last Error from $Error because we have already dealt with it
+                    }
+                } else {
+                    # Could not find VM from baseline in the current VMs anymore... Ignore!
+                    # Write-Host -f red "VM MISSING $($b.VMname)!"
+                }
+
+            }
         
 
-        # Set information for the next loop
-        $LastVmName = $b.VmName
-        $lastVMUUID = $b.UUID
+            # Set information for the next loop
+            $LastVmName = $b.VmName
+            $lastVMUUID = $b.UUID
 
-        # If we have a snapshot calculate changes since the last baseline
-        if ($null -ne $snapshot) {
-            # Get the corresponding virtual disk for the snap
-            [VMware.Vim.VirtualDisk]$snapdisk = (Get-View $snapshot).Config.Hardware.Device | where {($_.GetType()).Name -eq "VirtualDisk"} | Where-Object {$_.key -eq $b.DiskKey}
+            # If we have a snapshot calculate changes since the last baseline
+            if ($null -ne $snapshot) {
+                # Get the corresponding virtual disk for the snap
+                [VMware.Vim.VirtualDisk]$snapdisk = (Get-View $snapshot).Config.Hardware.Device | where {($_.GetType()).Name -eq "VirtualDisk"} | Where-Object {$_.key -eq $b.DiskKey}
 
-            # Calculate changes and add them to the list
-            $objTemp = Calculate-Changes -snapshot $snapshot -snapdisk $snapdisk -DiskKey $b.DiskKey -ChangeId $b.ChangeId -BaseTime $b.TimeStamp -ThisTime $TimeStamp
-            $data += ,$objTemp
+                # Calculate changes and add them to the list
+                $objTemp = Calculate-Changes -snapshot $snapshot -snapdisk $snapdisk -DiskKey $b.DiskKey -ChangeId $b.ChangeId -BaseTime $b.TimeStamp -ThisTime $TimeStamp
+                $data += ,$objTemp
 
-            # Change 'ChangeId' and 'TimeStamp' in the baseline for the next run of the script.
-            $b.ChangeId = $snapdisk.Backing.ChangeId
-            $b.TimeStamp = $TimeStamp
+                if ($OutputJSON) {
+                    # Only export new Information with JSON
+                    (@{'Data' = $objTemp} | ConvertTo-Json -Depth 1 -Compress).ToString()
+                }
 
-            # If it is the first daily snapshot today, update the daily information, too.
-            if ($b.DailyTimeStamp.Substring(0,10) -ne (Get-Date -Format $DTformat).Substring(0,10)) {
-                $objTemp = Calculate-Changes -VM $VM -snapshot $snapshot -snapdisk $snapdisk -DiskKey $b.DiskKey -ChangeId $b.DailyChangeId -BaseTime $b.DailyTimeStamp -ThisTime $TimeStamp
-                $DailyData += ,$objTemp
+                # Change 'ChangeId' and 'TimeStamp' in the baseline for the next run of the script.
+                $b.ChangeId = $snapdisk.Backing.ChangeId
+                $b.TimeStamp = $TimeStamp
 
-                $b.DailyChangeId = $snapdisk.Backing.ChangeId
-                $b.DailyTimeStamp = $TimeStamp
-            }
+                # If it is the first daily snapshot today, update the daily information, too.
+                if ($b.DailyTimeStamp.Substring(0,10) -ne (Get-Date -Format $DTformat).Substring(0,10)) {
+                    $objTemp = Calculate-Changes -VM $VM -snapshot $snapshot -snapdisk $snapdisk -DiskKey $b.DiskKey -ChangeId $b.DailyChangeId -BaseTime $b.DailyTimeStamp -ThisTime $TimeStamp
+                    $DailyData += ,$objTemp
 
-            # If the weekday matches the chosen weekday and it is the first weekly snapshot today, update the weekly information, too.
-            if (((Get-Date).DayOfWeek -eq [DayOfWeek] $weekDay) -and ($b.WeeklyTimeStamp.Substring(0,10) -ne (Get-Date -Format $DTformat).Substring(0,10))) {
-                $objTemp = Calculate-Changes -VM $VM -snapshot $snapshot -snapdisk $snapdisk -DiskKey $b.DiskKey -ChangeId $b.WeeklyChangeId -BaseTime $b.WeeklyTimeStamp -ThisTime $TimeStamp
-                $WeeklyData += ,$objTemp
+                    if ($OutputJSON) {
+                        # Only export new Information with JSON
+                        (@{'DailyData' = $objTemp} | ConvertTo-Json -Depth 1 -Compress).ToString()
+                    }
 
-                $b.WeeklyChangeId = $snapdisk.Backing.ChangeId
-                $b.WeeklyTimeStamp = $TimeStamp
+                    $b.DailyChangeId = $snapdisk.Backing.ChangeId
+                    $b.DailyTimeStamp = $TimeStamp
+                }
+
+                # If the weekday matches the chosen weekday and it is the first weekly snapshot today, update the weekly information, too.
+                if (((Get-Date).DayOfWeek -eq [DayOfWeek] $weekDay) -and ($b.WeeklyTimeStamp.Substring(0,10) -ne (Get-Date -Format $DTformat).Substring(0,10))) {
+                    $objTemp = Calculate-Changes -VM $VM -snapshot $snapshot -snapdisk $snapdisk -DiskKey $b.DiskKey -ChangeId $b.WeeklyChangeId -BaseTime $b.WeeklyTimeStamp -ThisTime $TimeStamp
+                    $WeeklyData += ,$objTemp
+
+                    if ($OutputJSON) {
+                        # Only export new Information with JSON
+                        (@{'WeeklyData' = $objTemp} | ConvertTo-Json -Depth 1 -Compress).ToString()
+                    }
+
+                    $b.WeeklyChangeId = $snapdisk.Backing.ChangeId
+                    $b.WeeklyTimeStamp = $TimeStamp
+                }
             }
         }
     }
@@ -648,13 +844,15 @@ if (-not $bFirstRun) {
         AsyncRemove-Snapshot $snapshot
     }
 
-    # CSV export data
-    $Data | Export-CSV -Delimiter ';' $Datafile -NoTypeInformation -Append
-    if (($null -ne $DailyData) -and ($DailyData.Count -gt 0)){
-        $DailyData | Export-CSV -Delimiter ';' $DailyDatafile -NoTypeInformation -Append
-    }
-    if (($null -ne $WeeklyData) -and ($WeeklyData.Count -gt 0)){
-        $WeeklyData | Export-CSV -Delimiter ';' $WeeklyDatafile -NoTypeInformation -Append
+    if (-not $NoDataFiles) {
+        # CSV export data
+        $Data | Export-CSV -Delimiter ';' $Datafile -NoTypeInformation -Append
+        if (($null -ne $DailyData) -and ($DailyData.Count -gt 0)){
+            $DailyData | Export-CSV -Delimiter ';' $DailyDatafile -NoTypeInformation -Append
+        }
+        if (($null -ne $WeeklyData) -and ($WeeklyData.Count -gt 0)){
+            $WeeklyData | Export-CSV -Delimiter ';' $WeeklyDatafile -NoTypeInformation -Append
+        }
     }
 
     # Update the baseline file with the new ChangIds and TimeStamps
@@ -665,18 +863,28 @@ if (-not $bFirstRun) {
 #$null = $objRemoveTasks | Wait-Task
 
 # Check for left-over CBT-related snapshots
-Write-Host " "
-Write-Host "Checking for leftover snapshots..."
-$Snapshots = Get-VM  | Get-Snapshot | ?{$_.name -match '\sCBT\s'}
+if (-not $OutputJSON) {
+    Write-Host " "
+    Write-Host "Checking for leftover snapshots..."
+}
+$Snapshots = Get-VM -Server $vCenter | Get-Snapshot | ?{$_.name -match '\sCBT\s'}
 If ($snapshots) {
-    Write-Host -f red (($Snapshots | Measure-Object).Count.toString() + " left-over CBT snapshot(s)! Going to remove...")
+    if (-not $OutputJSON) {
+        Write-Host -f red (($Snapshots | Measure-Object).Count.toString() + " left-over CBT snapshot(s)! Going to remove...")
+    }
     $Snapshots | Remove-Snapshot -Confirm:$false -ErrorAction SilentlyContinue
 } else {
-    Write-Host "None found!"
+    if (-not $OutputJSON) {
+        Write-Host "None found!"
+    }
 }
-Write-Host " "
 
 # Disconnect from vCenter
-Write-Host "Disconnecting from vCenter..."
+if (-not $OutputJSON) {
+    Write-Host " "
+    Write-Host "Disconnecting from vCenter..."
+}
 Disconnect-VIServer -Server $vCenterConnection -Force -Confirm:$false
-Write-Host "Done!"
+if (-not $OutputJSON) {
+    Write-Host "Done!"
+}
