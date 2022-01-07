@@ -54,8 +54,7 @@
                         The code is much more commented and cleaned up (hopefully).
                         If you need to exclude VMs from this script, look for 'Exclude VMs that are sensitive to snapshots' in the script.
 
- 
-.COMPONENT
+ .COMPONENT
     Requires VMware PowerCLI to be installed: https://www.vmware.com/support/developer/PowerCLI/
 
 .LINK
