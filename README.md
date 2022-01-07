@@ -1,16 +1,21 @@
+# GetChangedBlocksV2
+
 .SYNOPSIS
+
     Powershell script to measure the amount of disk changes on VMware VMs each time it is run.
 
 .DESCRIPTION
+
     This scripts measures the amount of disk changes on VMware VMs each time it is run.
     The main/original purpose is to get real data of the daily and weekly incremental changes of your VMs in order to size your data protection / backup solution properly.
     It measures all VM virtual disks for which Change Block Tracking (CBT) has been enabled.
     The first time it is run, it creates a file containing baseline data (CBT change IDs and times).
     Each subsequent run measures changes since the last run.
-    Additionally once a day/week it measures changes since the last day/week.
+    Additionally once a day/week (first run) it measures changes since the last day/week.
     Note that every run creates a short-lived snapshot on every VM that has CBT enabed.
 
 .NOTES
+
     Version:            1.2
     Author:             Pasqual Döhring
     Creation Date:      2021-07-13
@@ -31,7 +36,8 @@
     Author:             Pasqual Döhring
     Creation Date:      2021-02-11
     Purpose/Change:     Added the ability to filter by the datacenter and the cluster of VMware in case you don't want to track the whole vCenter.
-                        Datacenter and cluster of each VM are added to the csv files. (Attention: This breaks compatibility with existing Baseline and Data files and increases runtime by roughly 10 percent!)
+                        Datacenter and cluster of each VM are added to the csv files.
+                        (Attention: This breaks compatibility with existing Baseline and Data files and increases runtime by roughly 10 percent!)
                         The script now automatically tries to remove leftover snapshots.
 
     Version:            1.0
@@ -115,4 +121,3 @@
 .EXAMPLE
     GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -Datacenter 'MyFancyDatacenter' -Username "domain\admin" -Password "PWD123"
     Running the script against 'vcenter.mycompany.local' with explicit user credentials. Using just the VMs inside the datacenter 'MyFancyDatacenter'.
-    
