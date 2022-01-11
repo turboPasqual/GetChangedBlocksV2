@@ -8,8 +8,8 @@
 .DESCRIPTION
 
     This scripts measures the amount of disk changes on VMware VMs each time it is run.
-    The main/original purpose is to get real data of the daily and weekly incremental changes of your VMs in order to size your
-    data protection / backup solution properly.
+    The main/original purpose is to get real data of the daily and weekly incremental changes of your
+	VMs in order to size your data protection / backup solution properly.
     It measures all VM virtual disks for which Change Block Tracking (CBT) has been enabled.
     The first time it is run, it creates a file containing baseline data (CBT change IDs and times).
     Each subsequent run measures changes since the last run.
@@ -18,6 +18,15 @@
 
 
 .NOTES
+
+    Version:            2.3
+    Author:             Pasqual Döhring
+    Creation Date:      2022-01-11
+    Purpose/Change:     Changed the version number to be more consistent with the script name.
+                        Fixed a minor bug with the timestamp of snapshots.
+                        Created a simple Excel file to analyse the results (_Data_Analysis.xlsx).
+                        Added parameter "-FilterScript" to the readme.
+
 
     Version:            1.2
     Author:             Pasqual Döhring
@@ -129,6 +138,12 @@
     Optional
 
 
+.Parameter FilterScript
+
+    VMs can be excluded by this parameter. This is based by the properties of a VM (type: VMware.VimAutomation.ViCore.Types.V1.Inventory.VirtualMachine). By using a FilterScript you just include(!) those VMs for which the script is true.
+    Optional
+
+
 .EXAMPLE
 
     GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local
@@ -153,3 +168,18 @@
 
     GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -Datacenter 'MyFancyDatacenter' -Username "domain\admin" -Password "PWD123"
     Running the script against 'vcenter.mycompany.local' with explicit user credentials. Using just the VMs inside the datacenter 'MyFancyDatacenter'.
+
+
+.EXAMPLE
+
+    GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -FilterScript '$_.Name -notlike "*test*"'
+
+
+.EXAMPLE
+
+    GetChangedBlocksV2.ps1 -vCenter vcenter.mycompany.local -FilterScript '$_.Name -like "PleaseIncludeMe*" -and $_.PowerState -eq "PoweredOn"'
+
+
+.EXAMPLE
+
+    powershell.exe -File C:\Script\GetChangedBlocksV2.ps1 -vCenter vcenter.loc -FilterScript "$_.Name -notmatch \"importantVM\" -and $_.Name -notlike \"vcenter*\""
