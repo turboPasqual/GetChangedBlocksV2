@@ -19,6 +19,14 @@
 
 .NOTES
 
+    Version:            2.4
+    Author:             Pasqual Döhring
+    Creation Date:      2022-01-20
+    Purpose/Change:     Fixed an issue with different operating system languages. The culture is now set to en-US.
+                        Switched to UTF8 encoding for csv exports.
+                        Adjusted the Excel spread sheet for the new data format.
+
+
     Version:            2.3
     Author:             Pasqual Döhring
     Creation Date:      2022-01-11
@@ -44,6 +52,7 @@
                             Example: -FilterScript '$_.Name -notlike "*test*"'
                             Example: -FilterScript '$_.Name -like "PleaseIncludeMe*" -and $_.PowerState -eq "PoweredOn"'
 
+
     Version:            1.1
     Author:             Pasqual Döhring
     Creation Date:      2021-02-11
@@ -51,6 +60,7 @@
                         Datacenter and cluster of each VM are added to the csv files.
                         (Attention: This breaks compatibility with existing Baseline and Data files and increases runtime by roughly 10 percent!)
                         The script now automatically tries to remove leftover snapshots.
+
 
     Version:            1.0
     Author:             Pasqual Döhring
@@ -183,3 +193,4 @@
 .EXAMPLE
 
     powershell.exe -File C:\Script\GetChangedBlocksV2.ps1 -vCenter vcenter.loc -FilterScript "$_.Name -notmatch \"importantVM\" -and $_.Name -notlike \"vcenter*\""
+

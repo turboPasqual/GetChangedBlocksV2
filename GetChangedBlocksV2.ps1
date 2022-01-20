@@ -20,6 +20,14 @@
 
 .NOTES
 
+    Version:            2.4
+    Author:             Pasqual Döhring
+    Creation Date:      2022-01-20
+    Purpose/Change:     Fixed an issue with different operating system languages. The culture is now set to en-US.
+                        Switched to UTF8 encoding for csv exports.
+                        Adjusted the Excel spread sheet for the new data format.
+
+
     Version:            2.3
     Author:             Pasqual Döhring
     Creation Date:      2022-01-11
@@ -45,6 +53,7 @@
                             Example: -FilterScript '$_.Name -notlike "*test*"'
                             Example: -FilterScript '$_.Name -like "PleaseIncludeMe*" -and $_.PowerState -eq "PoweredOn"'
 
+
     Version:            1.1
     Author:             Pasqual Döhring
     Creation Date:      2021-02-11
@@ -52,6 +61,7 @@
                         Datacenter and cluster of each VM are added to the csv files.
                         (Attention: This breaks compatibility with existing Baseline and Data files and increases runtime by roughly 10 percent!)
                         The script now automatically tries to remove leftover snapshots.
+
 
     Version:            1.0
     Author:             Pasqual Döhring
@@ -287,6 +297,12 @@ Param (
 
 # Setting StrictMode to prevent programming errors
 Set-StrictMode -Version Latest
+
+# Setting the culture to en-US so that we alwas get the same results no matter what the language of the operating system is
+$culture = [System.Globalization.CultureInfo]::CreateSpecificCulture("en-US")
+$currentThread = [System.Threading.Thread]::CurrentThread
+$currentThread.CurrentCulture = $culture
+$currentThread.CurrentUICulture = $culture
 
 # Base names for data files
 [String]$Basefile = 'Baselines.csv'
@@ -582,7 +598,7 @@ $TimeStamp = Get-Date -Format $DTformat
 # Try to read existing file with VMs without CBT
 [PSObject[]]$NoCbtVMs = @()
 try {
-    $NoCbtVMs = Import-CSV $NoCBTVMFile -Delimiter ";" -ErrorAction Stop
+    $NoCbtVMs = Import-CSV $NoCBTVMFile -UseCulture -ErrorAction Stop
 } catch {
     $Error.RemoveAt(0) # Remove last Error from $Error because we have already dealt with it
 }
@@ -607,7 +623,7 @@ foreach ($VMWithoutCBT in $VMsWithoutCBT) {
 }
 # Sort list and write it to disk
 $NoCbtVMs = $NoCbtVMs | Sort-Object -Property VmName, UUID
-$NoCbtVMs | Export-CSV -Delimiter ';' $NoCBTVMFile -NoTypeInformation -Force
+$NoCbtVMs | Export-CSV -UseCulture $NoCBTVMFile -NoTypeInformation -Force -Encoding UTF8
 
 
 # Build list of VMs that are not to be snapshotted at all.
@@ -623,7 +639,7 @@ $NoCbtVMs | Export-CSV -Delimiter ';' $NoCBTVMFile -NoTypeInformation -Force
 # Try to read existing baseline file
 [PSObject[]]$Baselines = @()
 try {
-    $Baselines = Import-CSV $Basefile -Delimiter ";" -ErrorAction Stop
+    $Baselines = Import-CSV $Basefile -UseCulture -ErrorAction Stop
 } catch {
     $Error.RemoveAt(0) # Remove last Error from $Error because we have already dealt with it
     $bFirstRun = $true
@@ -632,7 +648,7 @@ try {
 # Try to read existing file with independent disks
 [PSObject[]]$IndependentDisks = @()
 try {
-    $IndependentDisks = Import-CSV $IndependentDiskFile -Delimiter ";" -ErrorAction Stop
+    $IndependentDisks = Import-CSV $IndependentDiskFile -UseCulture -ErrorAction Stop
 } catch {
     $Error.RemoveAt(0) # Remove last Error from $Error because we have already dealt with it
 }
@@ -724,7 +740,7 @@ foreach ($vm in $VMsToTrack) {
 
             # Log Error in $SnapErrorFile
             if (-not $NoDataFiles) {
-                $objTemp | Export-CSV -Delimiter ';' $SnapErrorFile -NoTypeInformation -Force -Append
+                $objTemp | Export-CSV -UseCulture $SnapErrorFile -NoTypeInformation -Force -Append -Encoding UTF8
             }
             
             $Error.RemoveAt(0) # Remove last Error from $Error because we have already dealt with it
@@ -761,7 +777,7 @@ foreach ($vm in $VMsToTrack) {
 }
 
 # CSV export of independent disks
-$IndependentDisks | Export-CSV -Delimiter ';' $IndependentDiskFile -NoTypeInformation -Force
+$IndependentDisks | Export-CSV -UseCulture $IndependentDiskFile -NoTypeInformation -Force -Encoding UTF8
 
  
 # Additional Info
@@ -777,7 +793,7 @@ if (-not $OutputJSON) {
     
 # CSV export of baselines
 $Baselines = $Baselines | Sort-Object -Property VmName, DiskName
-$Baselines | Export-CSV -Delimiter ';' $Basefile -NoTypeInformation -Force
+$Baselines | Export-CSV -UseCulture $Basefile -NoTypeInformation -Force -Encoding UTF8
 
 
 
@@ -842,7 +858,7 @@ if (-not $bFirstRun) {
 
                         # Log Error in $SnapErrorFile
                         if (-not $NoDataFiles) {
-                            $objTemp | Export-CSV -Delimiter ';' $SnapErrorFile -NoTypeInformation -Force -Append
+                            $objTemp | Export-CSV -UseCulture $SnapErrorFile -NoTypeInformation -Force -Append -Encoding UTF8
                         }
 
                         $Error.RemoveAt(0) # Remove last Error from $Error because we have already dealt with it
@@ -915,17 +931,17 @@ if (-not $bFirstRun) {
 
     if (-not $NoDataFiles) {
         # CSV export data
-        $Data | Export-CSV -Delimiter ';' $Datafile -NoTypeInformation -Append
+        $Data | Export-CSV -UseCulture $Datafile -NoTypeInformation -Append -Encoding UTF8
         if (($null -ne $DailyData) -and ($DailyData.Count -gt 0)){
-            $DailyData | Export-CSV -Delimiter ';' $DailyDatafile -NoTypeInformation -Append
+            $DailyData | Export-CSV -UseCulture $DailyDatafile -NoTypeInformation -Append -Encoding UTF8
         }
         if (($null -ne $WeeklyData) -and ($WeeklyData.Count -gt 0)){
-            $WeeklyData | Export-CSV -Delimiter ';' $WeeklyDatafile -NoTypeInformation -Append
+            $WeeklyData | Export-CSV -UseCulture $WeeklyDatafile -NoTypeInformation -Append -Encoding UTF8
         }
     }
 
     # Update the baseline file with the new ChangIds and TimeStamps
-    $Baselines | Export-CSV -Delimiter ';' $Basefile -NoTypeInformation -Force
+    $Baselines | Export-CSV -UseCulture $Basefile -NoTypeInformation -Force -Encoding UTF8
 }
 
 #Write-Host "Waiting for snapshot removal tasks to finish..."
@@ -956,4 +972,22 @@ if (-not $OutputJSON) {
 Disconnect-VIServer -Server $vCenterConnection -Force -Confirm:$false
 if (-not $OutputJSON) {
     Write-Host "Done!"
+}
+
+
+
+
+
+function Set-PowerShellUICulture {
+    param([Parameter(Mandatory=$true)]
+          [string]$Name)
+
+    process {
+        $culture = [System.Globalization.CultureInfo]::CreateSpecificCulture($Name)
+       
+        $assembly = [System.Reflection.Assembly]::Load("System.Management.Automation")
+        $type = $assembly.GetType("Microsoft.PowerShell.NativeCultureResolver")
+        $field = $type.GetField("m_uiCulture", [Reflection.BindingFlags]::NonPublic -bor [Reflection.BindingFlags]::Static)
+        $field.SetValue($null, $culture)
+    }
 }
