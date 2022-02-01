@@ -14,7 +14,7 @@
     The first time it is run, it creates a file containing baseline data (CBT change IDs and times).
     Each subsequent run measures changes since the last run.
     Additionally once a day/week (first run) it measures changes since the last day/week.
-    Note that every run creates a short-lived snapshot on every VM that has CBT enabed.
+    Note that every run creates a short-lived snapshot on every VM that has CBT enabled.
 
 
 .NOTES
